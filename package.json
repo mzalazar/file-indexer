@@ -1,0 +1,34 @@
+{
+  "name": "file-indexer",
+  "version": "0.1.0",
+  "description": "This class allows you to get lines (a range) from very BIG FILES very fast.",
+  "main": "indexer.js",
+  "scripts": {
+    "test": "node indexer_test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mzalazar/file-indexer.git"
+  },
+  "keywords": [
+    "fileseek",
+    "seek",
+    "csv",
+    "textfile",
+    "index",
+    "indexer"
+  ],
+  "author": "Martin Zalazar",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/mzalazar/file-indexer/issues"
+  },
+  "homepage": "https://github.com/mzalazar/file-indexer#readme",
+  "dependencies": {
+    "fs": "^0.0.1-security",
+    "fs-ext": "^1.0.0",
+    "int64-buffer": "^0.1.10",
+    "path": "^0.12.7",
+    "stream": "^0.0.2"
+  }
+}
