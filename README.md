@@ -10,7 +10,7 @@ const indexer = require('./indexer')
 const i = new indexer()
 
 // Get lines deep inside file, from line 5000000 to line 5000010
-let lines = i.getLines('/home/mzalazar/big_file.txt', 5000000, 50000010) // ultra-fast (once indexed)
+let lines = i.getLines('/home/mzalazar/big_file.txt', 5000000, 5000010) // ultra-fast (once indexed)
 ```
 
 ## Index file
