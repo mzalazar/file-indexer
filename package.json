@@ -4,7 +4,7 @@
   "description": "This class allows you to get lines (a range) from very BIG FILES very fast.",
   "main": "indexer.js",
   "scripts": {
-    "test": "node indexer_test.js"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
     "type": "git",
@@ -25,10 +25,16 @@
   },
   "homepage": "https://github.com/mzalazar/file-indexer#readme",
   "dependencies": {
+    "colors": "^1.3.3",
+    "file-set": "^2.0.1",
     "fs": "^0.0.1-security",
     "fs-ext": "^1.0.0",
     "int64-buffer": "^0.1.10",
     "path": "^0.12.7",
     "stream": "^0.0.2"
+  },
+  "devDependencies": {
+    "chai": "^4.2.0",
+    "mocha": "^6.2.0"
   }
 }
