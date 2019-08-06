@@ -25,6 +25,7 @@
   },
   "homepage": "https://github.com/mzalazar/file-indexer#readme",
   "dependencies": {
+    "alphanum-sort": "^1.0.2",
     "colors": "^1.3.3",
     "file-set": "^2.0.1",
     "fs": "^0.0.1-security",

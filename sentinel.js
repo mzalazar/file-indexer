@@ -7,8 +7,10 @@ const path = require('path')
 const colors = require('colors')
 const numCores = require('os').cpus().length
 const fs = require('fs')
+const glob = require('glob')
+const sort = require('alphanum-sort')
 const mb = 1024 * 1024
-const DEBUG = true
+const DEBUG = false
 
 // Message only if DEBUG is ENABLED
 const LOG = (msg, ...args) => {
@@ -101,7 +103,7 @@ class Indexer {
 				switch (msg.type) {
 					case 'READY':
 						//						console.log(`READY part: ${msg.part}`)
-						console.log(`Received "READY" from worker!`.bgYellow.black)
+						LOG(`Received "READY" from worker!`.bgYellow.black)
 						// If there are more CHUNKS, give one to worker
 						if (this.chunks.length) {
 							let chunk = this.chunks.shift()
@@ -130,6 +132,29 @@ class Indexer {
 
 	mergeIndexes() {
 		console.log('mergeIndexes()'.red)
+		const fileHandle = this.createMasterIndex()
+		// options is optional
+		glob(`${this.tempDir}/*`, function (err, files) {
+			let master_offset = 0
+			sort(files).map(e => {
+				console.log(`Processing ${e}`)
+				let buffer = fs.readFileSync(e) // READ ENTIRE FILE
+				console.log(buffer)
+				let length = buffer.length
+				// Write each offset (readed from file) and add master_offset value to every offset found.
+				let newData = Buffer.alloc(length)
+				console.log('length: ' + newData.length)
+				for (let offsetBuffer = 0; offsetBuffer <= (length - 5); offsetBuffer += 5) {
+					let extracted = buffer.readUIntBE(offsetBuffer, 5)
+					newData.writeUIntBE(extracted + master_offset, offsetBuffer, 5)
+				}
+				// Flush data to index file!
+				fs.writeSync(fileHandle, newData)
+			})
+			// Close master index
+			fs.closeSync(fileHandle)
+		})
+
 		/*
 			TODO: Crear algunos archivos índices (diminutos) para probar el ORDENAMIENTO
 			// Foreach file in tempDir
@@ -146,7 +171,15 @@ class Indexer {
 			}
 		*/
 		// REMOVE DIRECTORY AND FILES
-		//		this.deleteFolderRecursive(this.tempDir)
+		setTimeout(() => {
+			this.deleteFolderRecursive(this.tempDir)
+		}, 1000)
+	}
+
+	createMasterIndex() {
+		let filename = `${this.filename}.index`
+		const handle = fs.openSync(filename, 'a')
+		return handle
 	}
 
 	deleteFolderRecursive(path) {
@@ -165,6 +198,7 @@ class Indexer {
 			fs.rmdirSync(path)
 		}
 	}
+
 	launchSinglethreaded() {
 		console.log('launchSinglethreaded.')
 		const thread = fork('./indexer_singlethread.js', [this.filename])
