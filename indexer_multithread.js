@@ -42,8 +42,8 @@ class IndexerMultithread {
     this.filename = filename
     this.tempIndex = null
     this.tempDir = tempdir
-    this.buffer = null
     this.fileHandle = null
+    this.chunkSize = 0
 
     process.on('message', msg => {
       LOG('MESSAGE RECEIVED IN WORKER: ', msg)
@@ -52,6 +52,9 @@ class IndexerMultithread {
           LOG('WORKER DONE.')
           break
         case 'CHUNK':
+          console.log(msg)
+          this.chunkSize = msg.data.end - msg.data.start
+          console.log(`chunkSize: ${this.chunkSize}`.bgBlue.white)
           this.processChunk(msg)
           LOG(`FINISH WITH CHUNK ${msg.data.part}, NOW SENDING "READY" SIGNAL...`.bgYellow.black)
           process.send({ type: 'READY', part: msg.data.part })
@@ -79,40 +82,40 @@ class IndexerMultithread {
   processChunk(chunk) {
     let fromOffset = chunk.data.start
     let toOffset = chunk.data.end
-    let chunkSize = toOffset - fromOffset
     // READ OFFSETS FROM FILE
-    let buffer = Buffer.alloc(chunkSize)
-    fs.readSync(this.fileHandle, buffer, 0, chunkSize, fromOffset)
+    let buffer = Buffer.alloc(this.chunkSize)
+    fs.readSync(this.fileHandle, buffer, 0, this.chunkSize, fromOffset)
     // INDEX PARTS (and write to buffer)
     let indexedData = METER.call(this, this.indexDataChunk, buffer)
     // GENERATE INDEX FILE
+    console.log(indexedData)
     let length = indexedData.length
     let toWrite = Buffer.alloc(length * 5)
     for (let i = 0, j = 0; i < length; i++ , j += 5) {
       toWrite.writeUIntBE(indexedData[i], j, 5); // Write 5 bytes on each loop
     }
+    if (chunk.data.part == 1) {
+      // Concatenate first FIX OFFSET (line 1: offset 0) for CODE optimization purposes
+      toWrite = Buffer.concat([Buffer.alloc(5), toWrite])
+    }
     this.writeIndexFile(toWrite, chunk.data.part)
   }
 
-  /*  generateIndexFile(data) {
-      this.tempIndex = `${this.tempDir}/${this.filename}.index.${data.part}`
-      LOG(this.tempIndex)
-    }*/
-
   indexDataChunk(data) {
-    data = data.toString()
-    let locations = []
+    data = data.toString('ascii')
+    let offsetLF = []
     const regex = /\n/g
     let match, currentBufferOffset = 0
     while ((match = regex.exec(data)) !== null) {
-      let hex = match.index
-      locations.push(hex)
+      let index = match.index + 1
+      offsetLF.push(index)
     }
-    return locations
+    return offsetLF
   }
 
   writeIndexFile(data, part) {
     // GENERATE INDEX PART AND WRITE DATA
+    //    let chunkSize = this.chunkSize.toString(16)
     let newIndex = `${this.tempDir}/${path.basename(this.filename)}.index.${part}`
     LOG(`writting to: ${newIndex}`.bgGreen.black)
     fs.writeFileSync(newIndex, data)
@@ -166,14 +169,6 @@ class IndexerMultithread {
         return
       }
     }*/
-
-  _closeFile(filename) {
-    fs.closeSync(this.handles[filename].fileHandle) // CLOSE FILE
-    if (this.handles[filename].indexHandle) {
-      fs.closeSync(this.handles[filename].indexHandle) // CLOSE INDEX
-    }
-    delete this.handles[filename] // DELETE HANDLES
-  }
 
   _getFileSize(filename) {
     fs.fstat
@@ -317,8 +312,6 @@ class IndexerMultithread {
   }
 
 }
-
-//LOG(`I'm alive... process id: ${process.pid}`)
 
 // Invoke indexer
 let filename = process.argv[2]

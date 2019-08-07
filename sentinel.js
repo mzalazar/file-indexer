@@ -1,6 +1,4 @@
 'use strict'
-//const indexer_multithread = require('./indexer_multithread')
-const indexer_singlethread = require('./indexer_singlethread')
 const { spawn, fork } = require('child_process')
 require('better-log/install')
 const path = require('path')
@@ -10,12 +8,17 @@ const fs = require('fs')
 const glob = require('glob')
 const sort = require('alphanum-sort')
 const mb = 1024 * 1024
-const DEBUG = false
+const SHOW_LAST_LF = false // SHOW LAST 'LF' WHEN SHOWING LINES
+const DEBUG = true
 
 // Message only if DEBUG is ENABLED
 const LOG = (msg, ...args) => {
 	if (DEBUG) {
-		console.log(msg, args)
+		if (args.length === 0) {
+			console.log(msg)
+		} else {
+			console.log(msg, args)
+		}
 	}
 }
 
@@ -35,7 +38,7 @@ class Indexer {
 
 	constructor(filename) {
 		this.minFileSize = 100
-		this.chunkSize = 100000 // MUST BE AN EVEN NUMBER
+		this.chunkSize = 10000000 // MUST BE AN EVEN NUMBER
 		this.filesize = null
 		this.filename = filename
 		this.isMultiCpu = numCores > 1
@@ -43,7 +46,7 @@ class Indexer {
 		this.tempDir = null
 		this.fixCRLF = true
 		this.chunks = []
-		this.flushing = false
+		this.threads = 0
 
 		process.on('uncaughtException', FATAL)
 
@@ -91,6 +94,7 @@ class Indexer {
 		console.log(`CORES: ${numCores}`)
 		for (let i = 0; i < numCores; i++) {
 			const thread = fork('./indexer_multithread.js', [this.filename, this.tempDir], process_options)
+			this.threads++
 			console.log(`Launched thread id: ${thread.pid}`)
 			// ERROR HANDLER
 			thread.on('error', (err) => {
@@ -103,7 +107,8 @@ class Indexer {
 				switch (msg.type) {
 					case 'READY':
 						//						console.log(`READY part: ${msg.part}`)
-						LOG(`Received "READY" from worker!`.bgYellow.black)
+						LOG(`Received "READY" from worker:`.bgYellow.black)
+						LOG(msg)
 						// If there are more CHUNKS, give one to worker
 						if (this.chunks.length) {
 							let chunk = this.chunks.shift()
@@ -122,8 +127,9 @@ class Indexer {
 			thread.on('exit', () => {
 				console.log('Thread exit!')
 				// If NOT flushing index right now... then do it!
-				if (!this.flushing) {
-					this.flushing = true
+				this.threads--
+				if (this.threads === 0) {
+					console.log('LAST THREAD HAS FINISHED!'.rainbow)
 					this.mergeIndexes()
 				}
 			})
@@ -131,54 +137,54 @@ class Indexer {
 	}
 
 	mergeIndexes() {
-		console.log('mergeIndexes()'.red)
-		const fileHandle = this.createMasterIndex()
+		console.log('STARTING MERGE'.bgRed.black)
+		let masterIndex = this.createMasterIndex()
+		const self = this;
 		// options is optional
-		glob(`${this.tempDir}/*`, function (err, files) {
-			let master_offset = 0
-			sort(files).map(e => {
-				console.log(`Processing ${e}`)
-				let buffer = fs.readFileSync(e) // READ ENTIRE FILE
-				console.log(buffer)
-				let length = buffer.length
-				// Write each offset (readed from file) and add master_offset value to every offset found.
-				let newData = Buffer.alloc(length)
-				console.log('length: ' + newData.length)
-				for (let offsetBuffer = 0; offsetBuffer <= (length - 5); offsetBuffer += 5) {
-					let extracted = buffer.readUIntBE(offsetBuffer, 5)
-					newData.writeUIntBE(extracted + master_offset, offsetBuffer, 5)
-				}
-				// Flush data to index file!
-				fs.writeSync(fileHandle, newData)
-			})
-			// Close master index
-			fs.closeSync(fileHandle)
-		})
-
-		/*
-			TODO: Crear algunos archivos índices (diminutos) para probar el ORDENAMIENTO
-			// Foreach file in tempDir
-			// Open it
-			// SET master_offset = last_index_filesize_processed || 0 // At first file it will be ZERO
+		const files = sort(glob.sync(`${this.tempDir}/*`))
+		let master_offset = 0
+		files.forEach((e, i) => {
+			//			let lastOne = (i === files.length - 1 ? true : false)
+			console.log(`Processing ${e}`)
+			let size = fs.statSync(e).size
+			let indexPart = fs.openSync(e, 'r')
+			let buffer = Buffer.alloc(size)
+			let bytesReaded = fs.readSync(indexPart, buffer, 0, size, 0) // READ ENTIRE FILE
+			console.log(`bytesReaded: ${bytesReaded}`)
 			// Write each offset (readed from file) and add master_offset value to every offset found.
-			// Rinse and repeat until no more files remainds.
-			// BE HAPPY!
-			const tempDir = temp_pruebas
-			files = new FileSet(`$tempDir/*`);
-			const regex = /index.([0-9A-F]+).part.(\d+)/
-			const orderByPart = (a, b) => {
-
+			let newData = Buffer.alloc(size)
+			let newValue
+			for (let offsetBuffer = 0; offsetBuffer <= (size - 5); offsetBuffer += 5) {
+				let offsetLF = buffer.readUIntBE(offsetBuffer, 5)
+				if (i > 0) {
+					// ADD MASTER OFFSET
+					newValue = offsetLF + master_offset
+				} else {
+					// THIS IS THE FIRST CHUNK, CONTINUE WITHOUT ADDING OFFSET
+					newValue = offsetLF
+				}
+				newData.writeUIntBE(newValue, offsetBuffer, 5)
 			}
-		*/
+			// Flush data to index file!
+			let bytesWritten = fs.writeSync(masterIndex, newData, 0)
+			console.log(`Written ${bytesWritten} bytes.`)
+			// Here... we need to PARSE last "offset" detected (\n) and subtract that offset
+			master_offset += this.chunkSize
+			// Close file
+			fs.closeSync(indexPart)
+		})
+		// Close master index
+		fs.closeSync(masterIndex)
+
 		// REMOVE DIRECTORY AND FILES
 		setTimeout(() => {
-			this.deleteFolderRecursive(this.tempDir)
+			self.deleteFolderRecursive(self.tempDir)
 		}, 1000)
 	}
 
 	createMasterIndex() {
 		let filename = `${this.filename}.index`
-		const handle = fs.openSync(filename, 'a')
+		const handle = fs.openSync(filename, 'w')
 		return handle
 	}
 
@@ -235,10 +241,6 @@ class Indexer {
 		}
 	}
 
-	flushIndex() {
-		//const sourceIdx = new 
-	}
-
 	_createTempDir() {
 		let folder = path.dirname(path.basename(this.filename))
 		this.tempDir = `${folder}/tempdir_${Date.now()}`
@@ -281,17 +283,62 @@ class Indexer {
 			*/
 		})
 	}
-
-	//  "splits"(only calculate offsets) data in "chunks" of 100.000 bytes
-	/*	divideWorkload() {
-			let size = this.filesize
-			let chunk = {}
-			for (let i = 0; i < this.filesize; i++) {
-				chunk.start =
-					chunks.push(chunk)
+	readLine(lineNum) {
+		// *** read from coordinates until NEXT CARRIAGE RETURN ***
+		let indexFileName = '50m.txt.index'
+		let mainFileName = '50m.txt'
+		let indexHandle = fs.openSync(indexFileName)
+		let fileHandle = fs.openSync(mainFileName)
+		let maxLine = (fs.statSync(indexFileName).size / 5) - 1
+		// compare if maxLine is reached.
+		console.log(`lineNum: ${lineNum}`)
+		console.log(`maxLine: ${maxLine}`)
+		if (lineNum <= maxLine) {
+			let bufferFromIndex = Buffer.alloc(10)
+			fs.readSync(indexHandle, bufferFromIndex, 0, 10, (lineNum - 1) * 5)
+			let fileOffsetFrom = bufferFromIndex.readUIntBE(0, 5)
+			let fileOffsetTo = bufferFromIndex.readUIntBE(5, 5)
+			if (!SHOW_LAST_LF) {
+				fileOffsetTo-- // Fix (doesn't show last LF)
 			}
-		}*/
+			let length = fileOffsetTo - fileOffsetFrom
+			let bufferFromFile = Buffer.alloc(length)
+			fs.readSync(fileHandle, bufferFromFile, 0, length, fileOffsetFrom)
+			console.log(`------>${bufferFromFile.toString()}<------`)
+		} else {
+			console.log('Max line was reached, can\'t read after EOF!')
+			process.exit(1)
+		}
+	}
 
+	readLines(fromLine, toLine) {
+		let indexFileName = '50m.txt.index'
+		let mainFileName = '50m.txt'
+		let indexHandle = fs.openSync(indexFileName)
+		let fileHandle = fs.openSync(mainFileName)
+		let maxLine = (fs.statSync(indexFileName).size / 5) - 1
+		// Some validation
+		if (fromLine >= toLine || toLine > maxLine) {
+			console.log('An error has occurred, i can\'t give you what you want... i think some numbers are misplaced.')
+			process.exit(1)
+		}
+		let bufferFromIndex = Buffer.alloc(5)
+		let bufferToIndex = Buffer.alloc(5)
+		fs.readSync(indexHandle, bufferFromIndex, 0, 5, (fromLine - 1) * 5)
+		fs.readSync(indexHandle, bufferToIndex, 0, 5, (toLine) * 5)
+		let fileOffsetFrom = bufferFromIndex.readUIntBE(0, 5)
+		console.log(`fileOffsetFrom: ${fileOffsetFrom}`)
+		let fileOffsetTo = bufferToIndex.readUIntBE(0, 5)
+		if (!SHOW_LAST_LF) {
+			fileOffsetTo-- // FIX (doesn't print last LF)
+		}
+		console.log(`fileOffsetTo: ${fileOffsetTo}`)
+		let length = fileOffsetTo - fileOffsetFrom
+		let bufferFromFile = Buffer.alloc(length)
+		fs.readSync(fileHandle, bufferFromFile, 0, length, fileOffsetFrom)
+		//    console.log(`------>${bufferFromFile.toString().replace(/\s/g, '_')}<------`)
+		console.log(`------>${bufferFromFile.toString()}<------`)
+	}
 
 }
 
