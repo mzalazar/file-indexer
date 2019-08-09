@@ -3,7 +3,7 @@ const path = require('path')
 const fsext = require('fs-ext')
 const colors = require('colors')
 const Uint64BE = require('int64-buffer').Uint64BE
-const DEBUG = true
+const DEBUG = false
 
 // Message only if DEBUG is ENABLED
 const LOG = (msg, ...args) => {
@@ -38,7 +38,7 @@ const METER = function (fn, msg) {
 class IndexerMultithread {
 
   constructor(filename, tempdir) {
-    console.log(`I'm indexer multi-core!`.bgGreen.black)
+    LOG(`I'm indexer multi-core!`.bgGreen.black)
     this.filename = filename
     this.tempIndex = null
     this.tempDir = tempdir
@@ -52,9 +52,9 @@ class IndexerMultithread {
           LOG('WORKER DONE.')
           break
         case 'CHUNK':
-          console.log(msg)
+          LOG(msg)
           this.chunkSize = msg.data.end - msg.data.start
-          console.log(`chunkSize: ${this.chunkSize}`.bgBlue.white)
+          LOG(`chunkSize: ${this.chunkSize}`.bgBlue.white)
           this.processChunk(msg)
           LOG(`FINISH WITH CHUNK ${msg.data.part}, NOW SENDING "READY" SIGNAL...`.bgYellow.black)
           process.send({ type: 'READY', part: msg.data.part })
@@ -88,7 +88,7 @@ class IndexerMultithread {
     // INDEX PARTS (and write to buffer)
     let indexedData = METER.call(this, this.indexDataChunk, buffer)
     // GENERATE INDEX FILE
-    console.log(indexedData)
+    LOG(indexedData)
     let length = indexedData.length
     let toWrite = Buffer.alloc(length * 5)
     for (let i = 0, j = 0; i < length; i++ , j += 5) {

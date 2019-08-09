@@ -10,7 +10,7 @@ const glob = require('glob')
 const sort = require('alphanum-sort')
 const mb = 1024 * 1024
 const SHOW_LAST_LF = false // SHOW LAST 'LF' WHEN SHOWING LINES
-const DEBUG = true
+const DEBUG = false
 
 // Message only if DEBUG is ENABLED
 const LOG = (msg, ...args) => {
@@ -135,6 +135,15 @@ class Indexer extends EventEmitter {
 						if (this.chunks.length) {
 							let chunk = this.chunks.shift()
 							thread.send({ type: 'CHUNK', data: chunk })
+							let currentPercentage = Math.floor((this.chunks.length * this.chunkSize) / this.filesize * 100)
+							if (!DEBUG) {
+								process.stdout.clearLine()
+								process.stdout.write(`\rData left: ${currentPercentage}%`)
+								if (currentPercentage == 0) {
+									console.log('\nDone indexing.')
+									console.log('Starting index merge...')
+								}
+							}
 						} else {
 							LOG('No more chunks available, sending SIGTERM to thread.'.bgRed.black)
 							thread.kill('SIGTERM')
