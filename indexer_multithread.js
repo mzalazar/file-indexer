@@ -1,6 +1,5 @@
 const fs = require('fs')
 const path = require('path')
-const fsext = require('fs-ext')
 const colors = require('colors')
 const Uint64BE = require('int64-buffer').Uint64BE
 const DEBUG = false
@@ -153,23 +152,6 @@ class IndexerMultithread {
     }
   }
 
-  _openIndexFile() {
-
-  }
-
-  /*  _indexExists(filename) {
-      let indexExists = false
-      let indexHandle
-      try {
-        // OPEN INDEX FILE
-        indexHandle = fs.openSync(`${filename}.index`, 'r') // OPEN INDEX FILE
-        indexExists = true
-      } catch (err) {
-        this.handles[filename].indexed = false
-        return
-      }
-    }*/
-
   _getFileSize(filename) {
     fs.fstat
   }
@@ -205,111 +187,6 @@ class IndexerMultithread {
           this.handles[filename].indexing = false
           return resolve()
         })*/
-
-  //╔════════════════════════════════════╗
-  //║ GET LINES FROM FILE USING AN INDEX ║
-  //╚════════════════════════════════════╝
-  getLines(filename, fromLine, toLine) {
-    fromLine = parseInt(fromLine, 10)
-    toLine = parseInt(toLine, 10)
-    filename = path.resolve(filename) // Convert to absolute path
-    this._openFile(filename)
-    LOG('filename ' + filename + ' opened')
-    if (this.handles[filename].indexed == false) {
-      // LETS MAKE AN INDEX!
-      LOG('Index file not found... making a new one.')
-      this.makeIndex(filename)
-    }
-
-    // GET HANDLE
-    let fd = this.handles[filename].indexHandle
-    let offsetStart = this._getStartLinePosition(fd, fromLine)
-    let offsetEnd = this._getEndLinePosition(fd, toLine)
-    let readSize = offsetEnd - offsetStart
-    LOG('offsetStart: ' + offsetStart)
-    LOG('offsetEnd: ' + offsetEnd)
-    LOG('readSize: ' + readSize)
-
-    // PREPARE BUFFER
-    let buffer = new Buffer.alloc(readSize, 0) // FILL WITH 0x0.
-    try {
-      let fd = this.handles[filename].fileHandle
-      // READ THE FILE
-      LOG(`fseeking to position ${offsetStart}`)
-      fsext.seekSync(fd, offsetStart, 0)
-      LOG(`reading ${readSize} bytes`)
-      fs.readSync(fd, buffer, 0, readSize, null)
-      // RETURN LINES!
-      return buffer.toString()
-    } catch (err) {
-      // FATAL ERROR
-      throw err
-    }
-  }
-
-  /**************/
-  /* MARK START */
-  /**************/
-  _getStartLinePosition(fd, line) {
-    let offset
-    let buffer = new Buffer.alloc(8, 0) // FILL WITH 0x0.
-    if (line === 1) {
-      var num = new Uint64BE(0).toNumber()
-      return num
-    } else {
-      // Set offset
-      offset = (line * 8) - 16
-      try {
-        LOG(`fseeking to position ${offset}`)
-        fsext.seekSync(fd, offset, 0)
-        LOG(`reading 8 bytes`)
-        fs.readSync(fd, buffer, 0, 8, null)
-        LOG(buffer)
-        var num = new Uint64BE(buffer).toNumber() + 1
-        return num
-      } catch (err) {
-        throw err
-      }
-    }
-  }
-
-  /************/
-  /* MARK END */
-  /************/
-  _getEndLinePosition(fd, line) {
-    LOG('_getEndLinePosition()')
-    let offset
-    let buffer = new Buffer.alloc(8, 0) // FILL WITH 0x0.
-    if (line === 1) {
-      offset = 0
-    } else {
-      offset = (line * 8) - 8
-    }
-    try {
-      LOG(`fseeking to position ${offset}`)
-      fsext.seekSync(fd, offset, 0)
-      LOG(`reading 8 bytes`)
-      fs.readSync(fd, buffer, 0, 8, null)
-      LOG(buffer)
-      var num = new Uint64BE(buffer).toNumber() + 1
-      return num
-    } catch (err) {
-      throw err
-    }
-  }
-
-  // GET FILE PART
-  getFileChunk(fromOffset, toOffset) {
-    const count = toOffset - fromOffset + 1
-    const buffer = Buffer.alloc(count)
-    try {
-      fs.seekSync(this.fileHandle, fromOffset, 0)
-      fs.readSync(this.fileHandle, buffer, 0, count, fromOffset)
-    } catch (err) {
-      throw new Error(err)
-    }
-    return buffer
-  }
 
 }
 
