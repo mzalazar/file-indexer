@@ -10,7 +10,7 @@ const glob = require('glob')
 const sort = require('alphanum-sort')
 const mb = 1024 * 1024
 const SHOW_LAST_LF = false // SHOW LAST 'LF' WHEN SHOWING LINES
-const DEBUG = false
+const DEBUG = true
 
 // Message only if DEBUG is ENABLED
 const LOG = (msg, ...args) => {
@@ -52,47 +52,49 @@ class Indexer extends EventEmitter {
 
 		process.on('uncaughtException', FATAL)
 
-		this.startIndexing()
-			.catch(FATAL)
+		const indexExists = this.checkIndexExistence()
+		if (indexExists) {
+			LOG('1 Index already exists, no need to reindex.')
+			// Need to do this in next "event loop"
+			process.nextTick(() => {
+				this.emit('indexed')
+			})
+		} else {
+			this.startIndexing()
+				.catch(FATAL)
+		}
 	}
 
 	async startIndexing() {
 		// VALIDATE PARAMETER
 		if (typeof this.filename !== 'string' || this.filename.length === 0) {
-			throw new Error('Filename is required!')
-			process.exit(1)
+			FATAL('Filename is required!')
 		}
 
 		// VALIDATE FILE EXISTENCE (getting filesize)
 		this._getFileSize()
 
-		const indexExists = this.checkIndexExistence()
-		if (indexExists) {
-			LOG('Index already exists, no need to reindex.')
-			this.emit('indexed')
-		} else {
-			// VALIDATE FILE SIZE
-			/*		if (this.filesize < this.minFileSize * mb) { ** LO COMENTO POR AHORA
-						throw new Error(`Cannot index a file less than ${this.minFileSize}Mb`)
-					}*/
+		// VALIDATE FILE SIZE
+		/*		if (this.filesize < this.minFileSize * mb) { ** LO COMENTO POR AHORA
+					throw new Error(`Cannot index a file less than ${this.minFileSize}Mb`)
+				}*/
 
-			// FIX CARRIAGE RETURN (if option is set)
-			if (this.fixCRLF) {
-				await this._fixCRLF()
-			}
-
-			this._divideCpuLoad()
-
-			// CREATE TEMP DIRECTORY (FOR INDEXED PARTS)
-			this._createTempDir()
-
-			// LAUNCH WORKERS
-			this.launchMultithread()
-			/*		} else {
-						// LAUNCH A SINGLE THREAD
-						this.launchSinglethreaded()
-					}*/
+		// FIX CARRIAGE RETURN (if option is set)
+		if (this.fixCRLF) {
+			await this._fixCRLF()
 		}
+
+		this._divideCpuLoad()
+
+		// CREATE TEMP DIRECTORY (FOR INDEXED PARTS)
+		this._createTempDir()
+
+		// LAUNCH WORKERS
+		this.launchMultithread()
+		/*		} else {
+					// LAUNCH A SINGLE THREAD
+					this.launchSinglethreaded()
+				}*/
 	}
 
 	checkIndexExistence() {
@@ -119,10 +121,7 @@ class Indexer extends EventEmitter {
 			this.threads++
 			LOG(`Launched thread id: ${thread.pid}`)
 			// ERROR HANDLER
-			thread.on('error', (err) => {
-				LOG(`Thread ${thread.id} throws an error: ${err}`)
-				process.exit(1)
-			})
+			thread.on('error', FATAL)
 
 			// WORKER FINISH INDEXING PART
 			thread.on('message', (msg) => {
@@ -137,8 +136,8 @@ class Indexer extends EventEmitter {
 							thread.send({ type: 'CHUNK', data: chunk })
 							let currentPercentage = Math.floor((this.chunks.length * this.chunkSize) / this.filesize * 100)
 							if (!DEBUG) {
-								process.stdout.clearLine()
-								process.stdout.write(`\rData left: ${currentPercentage}%`)
+								process.stdout.write(`\x1Bc\rData left: ${currentPercentage}%`)
+
 								if (currentPercentage == 0) {
 									console.log('\nDone indexing.')
 									console.log('Starting index merge...')
@@ -223,7 +222,6 @@ class Indexer extends EventEmitter {
 			fs.readdirSync(path).forEach(function (file, index) {
 				var curPath = `${path}/${file}`
 				LOG(`To be deleted: ${path}/${file}`)
-				//				process.exit()
 				if (fs.lstatSync(curPath).isDirectory()) { // recurse
 					deleteFolderRecursive(curPath)
 				} else { // delete file
@@ -240,8 +238,7 @@ class Indexer extends EventEmitter {
 
 		// CHECK IF INDEXER FINISH
 		thread.on('exit', (code) => {
-			LOG(`child process exited with code ${code}`)
-			process.exit() // EXIT MAIN PROCESS
+			FATAL(`child process exited with code ${code}`)
 		})
 	}
 
