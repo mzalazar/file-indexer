@@ -10,7 +10,7 @@ const glob = require('glob')
 const sort = require('alphanum-sort')
 const mb = 1024 * 1024
 const SHOW_LAST_LF = false // SHOW LAST 'LF' WHEN SHOWING LINES
-const DEBUG = true
+const DEBUG = false
 
 // Message only if DEBUG is ENABLED
 const LOG = (msg, ...args) => {
@@ -31,6 +31,10 @@ const FATAL = (err, msg) => {
 	process.exit(1)
 }
 
+const replaceAt = (string, index, replace) => {
+	return string.substring(0, index) + replace + string.substring(index + 1)
+}
+
 const process_options = {
 	stdio: 'inherit'
 }
@@ -48,6 +52,7 @@ class Indexer extends EventEmitter {
 		this.tempDir = null
 		this.fixCRLF = true
 		this.chunks = []
+		this.chunksProcessed = 0
 		this.threads = 0
 
 		process.on('uncaughtException', FATAL)
@@ -116,6 +121,7 @@ class Indexer extends EventEmitter {
 		LOG(this.chunks)
 		LOG('Master process is running with pid:', process.pid)
 		LOG(`CORES: ${numCores}`)
+		let completedBar = '░░░░░░░░░░░░░░░░░░░░'
 		for (let i = 0; i < numCores; i++) {
 			const thread = fork('./indexer_multithread.js', [this.filename, this.tempDir], process_options)
 			this.threads++
@@ -134,10 +140,16 @@ class Indexer extends EventEmitter {
 						if (this.chunks.length) {
 							let chunk = this.chunks.shift()
 							thread.send({ type: 'CHUNK', data: chunk })
-							let currentPercentage = Math.floor((this.chunks.length * this.chunkSize) / this.filesize * 100)
+							this.chunksProcessed++
+							let currentPercentage = Math.floor((this.chunksProcessed * this.chunkSize) / this.filesize * 100)
+							for (let i = 0; i < 20; i++) {
+								if (i * 5 <= currentPercentage) {
+									completedBar = replaceAt(completedBar, i, '▓')
+								}
+							}
 							if (!DEBUG) {
-								process.stdout.write(`\x1Bc\rData left: ${currentPercentage}%`)
-
+								process.stdout.write(`\x1Bc\r${completedBar} ${currentPercentage}%`)
+								//								console.log(completedBar)
 								if (currentPercentage == 0) {
 									console.log('\nDone indexing.')
 									console.log('Starting index merge...')
@@ -355,6 +367,7 @@ class Indexer extends EventEmitter {
 		let indexHandle = fs.openSync(indexFileName)
 		let fileHandle = fs.openSync(mainFileName)
 		let maxLine = (fs.statSync(indexFileName).size / 5) - 1
+		console.log(`maxLine=${maxLine}`)
 		// Some validation
 		if (fromLine >= toLine || toLine > maxLine) {
 			FATAL('An error has occurred, i can\'t give you what you want... i think some numbers are misplaced.')

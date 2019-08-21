@@ -31,6 +31,10 @@
     "fs": "^0.0.1-security",
     "fs-ext": "^1.0.0",
     "int64-buffer": "^0.1.10",
+    "jsonc": "^2.0.0",
+    "jsonpack": "^1.1.5",
+    "moment-timezone": "^0.5.26",
+    "msgpack5": "^4.2.1",
     "path": "^0.12.7",
     "stream": "^0.0.2"
   },
